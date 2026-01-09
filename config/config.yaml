@@ -1,0 +1,71 @@
+# REACH Code Visualizer Configuration
+
+project:
+  root_path: "F:/Reach"
+  name: "REACH"
+
+parsing:
+  # File patterns to include
+  include_patterns:
+    - "**/*.gd"
+    - "**/*.tscn"
+    - "**/*.ts"
+    - "**/*.js"
+
+  # File patterns to exclude
+  exclude_patterns:
+    - "**/node_modules/**"
+    - "**/.godot/**"
+    - "**/build/**"
+    - "**/.git/**"
+    - "**/addons/**"
+    - "**/tools/data-visualizer/**"
+
+  # Parser-specific settings
+  gdscript:
+    parse_comments: true
+    extract_docstrings: true
+
+  typescript:
+    tsconfig_path: "reach-playfab/cloudscript/tsconfig.json"
+
+analysis:
+  # Confidence thresholds
+  high_confidence: 0.9
+  medium_confidence: 0.6
+  low_confidence: 0.3
+
+  # Max depth for path finding
+  max_path_depth: 10
+
+  # Dead code detection entry points
+  entry_points:
+    - "src/autoload/*.gd"
+    - "scenes/main.tscn"
+
+watch_mode:
+  enabled: true
+  debounce_ms: 500
+  excluded_dirs:
+    - ".godot"
+    - "node_modules"
+    - "build"
+
+server:
+  host: "localhost"
+  port: 5000
+  debug: false
+
+visualization:
+  default_layout: "force-directed"
+  max_visible_nodes: 500
+  edge_bundling: true
+
+export:
+  output_dir: "./exports"
+  auto_export_on_analysis: false
+  claude_export_format: "markdown"
+
+logging:
+  level: "INFO"
+  file: "./logs/visualizer.log"
