@@ -10,22 +10,26 @@ class GraphRenderer {
         this.nodes = new vis.DataSet([]);
         this.edges = new vis.DataSet([]);
         this.selectedNode = null;
+        this.currentLayout = 'forceAtlas2Based';
 
         // Event callbacks
         this.onNodeSelect = null;
         this.onNodeHover = null;
+        this.onNodeDoubleClick = null;
+        this.onClusterClick = null;
+        this.onDataLoaded = null;
 
         // Node color mapping
         this.nodeColors = {
-            'FUNCTION': { background: '#569cd6', border: '#4080a8', font: '#ffffff' },
-            'VARIABLE': { background: '#4ec9b0', border: '#3da38d', font: '#1e1e1e' },
-            'SIGNAL': { background: '#ce9178', border: '#a87360', font: '#1e1e1e' },
-            'CLASS': { background: '#c586c0', border: '#9d6a99', font: '#ffffff' },
-            'SCENE': { background: '#9cdcfe', border: '#7ab0cc', font: '#1e1e1e' },
-            'SIGNAL_CONNECTION': { background: '#ce9178', border: '#a87360', font: '#1e1e1e' },
-            'NODE_REFERENCE': { background: '#dcdcaa', border: '#b0b088', font: '#1e1e1e' },
-            'RESOURCE': { background: '#b5cea8', border: '#91a686', font: '#1e1e1e' },
-            'UNKNOWN': { background: '#808080', border: '#606060', font: '#ffffff' }
+            'FUNCTION': { background: '#61afef', border: '#4080a8', font: '#ffffff' },
+            'VARIABLE': { background: '#e5c07b', border: '#b8993e', font: '#1e1e1e' },
+            'SIGNAL': { background: '#98c379', border: '#6b9a4b', font: '#1e1e1e' },
+            'CLASS': { background: '#c678dd', border: '#9d5ab3', font: '#ffffff' },
+            'SCENE': { background: '#e06c75', border: '#b35359', font: '#ffffff' },
+            'SIGNAL_CONNECTION': { background: '#98c379', border: '#6b9a4b', font: '#1e1e1e' },
+            'NODE_REFERENCE': { background: '#56b6c2', border: '#3d8a93', font: '#1e1e1e' },
+            'RESOURCE': { background: '#d19a66', border: '#a67840', font: '#1e1e1e' },
+            'UNKNOWN': { background: '#5c6370', border: '#3e4451', font: '#ffffff' }
         };
 
         // Node shape mapping
@@ -43,16 +47,71 @@ class GraphRenderer {
 
         // Edge color mapping
         this.edgeColors = {
-            'CALLS': '#569cd6',
-            'READS': '#4ec9b0',
-            'WRITES': '#dcdcaa',
-            'EMITS': '#ce9178',
-            'CONNECTS_TO': '#c586c0',
-            'INSTANTIATES': '#9cdcfe',
-            'INHERITS': '#c586c0',
-            'REFERENCES': '#808080',
-            'CONTAINS': '#6d6d6d',
-            'ATTACHES_TO': '#b5cea8'
+            'CALLS': '#61afef',
+            'READS': '#98c379',
+            'WRITES': '#e5c07b',
+            'EMITS': '#c678dd',
+            'CONNECTS_TO': '#e06c75',
+            'INSTANTIATES': '#56b6c2',
+            'INHERITS': '#c678dd',
+            'REFERENCES': '#5c6370',
+            'CONTAINS': '#3e4451',
+            'ATTACHES_TO': '#d19a66'
+        };
+
+        // Layout options
+        this.layoutOptions = {
+            forceAtlas2Based: {
+                physics: {
+                    enabled: true,
+                    solver: 'forceAtlas2Based',
+                    forceAtlas2Based: {
+                        gravitationalConstant: -50,
+                        centralGravity: 0.01,
+                        springLength: 100,
+                        springConstant: 0.08,
+                        damping: 0.4
+                    },
+                    stabilization: {
+                        enabled: true,
+                        iterations: 200,
+                        updateInterval: 25
+                    }
+                },
+                layout: { improvedLayout: true }
+            },
+            hierarchical: {
+                physics: { enabled: false },
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'UD',
+                        sortMethod: 'hubsize',
+                        nodeSpacing: 150,
+                        levelSeparation: 150,
+                        treeSpacing: 200
+                    }
+                }
+            },
+            radial: {
+                physics: {
+                    enabled: true,
+                    solver: 'repulsion',
+                    repulsion: {
+                        centralGravity: 0.2,
+                        springLength: 200,
+                        springConstant: 0.05,
+                        nodeDistance: 100,
+                        damping: 0.09
+                    },
+                    stabilization: { enabled: true, iterations: 150 }
+                },
+                layout: { improvedLayout: true }
+            },
+            circular: {
+                physics: { enabled: false },
+                layout: { improvedLayout: false }
+            }
         };
 
         this.init();
@@ -62,11 +121,26 @@ class GraphRenderer {
      * Initialize the vis.js network.
      */
     init() {
-        const options = {
+        const options = this.getDefaultOptions();
+
+        this.network = new vis.Network(
+            this.container,
+            { nodes: this.nodes, edges: this.edges },
+            options
+        );
+
+        this.setupEventListeners();
+    }
+
+    /**
+     * Get default network options.
+     */
+    getDefaultOptions() {
+        return {
             nodes: {
                 font: {
                     size: 12,
-                    face: 'Segoe UI, sans-serif'
+                    face: 'Consolas, Monaco, monospace'
                 },
                 borderWidth: 2,
                 shadow: {
@@ -87,7 +161,7 @@ class GraphRenderer {
                 font: {
                     size: 10,
                     align: 'middle',
-                    color: '#9d9d9d'
+                    color: '#8b8b8b'
                 },
                 width: 1.5
             },
@@ -121,14 +195,6 @@ class GraphRenderer {
                 improvedLayout: true
             }
         };
-
-        this.network = new vis.Network(
-            this.container,
-            { nodes: this.nodes, edges: this.edges },
-            options
-        );
-
-        this.setupEventListeners();
     }
 
     /**
@@ -139,10 +205,21 @@ class GraphRenderer {
         this.network.on('click', (params) => {
             if (params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
+
+                // Check if it's a cluster
+                if (this.network.isCluster(nodeId)) {
+                    if (this.onClusterClick) {
+                        this.onClusterClick(nodeId);
+                    }
+                    return;
+                }
+
                 this.selectedNode = nodeId;
                 this.highlightNode(nodeId);
+
+                const nodeData = this.nodes.get(nodeId);
                 if (this.onNodeSelect) {
-                    this.onNodeSelect(nodeId);
+                    this.onNodeSelect(nodeId, nodeData);
                 }
             } else {
                 this.clearHighlight();
@@ -162,10 +239,21 @@ class GraphRenderer {
             this.container.style.cursor = 'default';
         });
 
-        // Double-click to focus on node
+        // Double-click for focus mode
         this.network.on('doubleClick', (params) => {
             if (params.nodes.length > 0) {
-                this.focusOnNode(params.nodes[0]);
+                const nodeId = params.nodes[0];
+
+                // Don't focus on clusters
+                if (this.network.isCluster(nodeId)) {
+                    return;
+                }
+
+                if (this.onNodeDoubleClick) {
+                    this.onNodeDoubleClick(nodeId);
+                } else {
+                    this.focusOnNode(nodeId);
+                }
             }
         });
 
@@ -198,8 +286,84 @@ class GraphRenderer {
         const visEdges = data.edges.map((edge, index) => this.createVisEdge(edge, index));
         this.edges.add(visEdges);
 
+        // Notify listeners
+        if (this.onDataLoaded) {
+            this.onDataLoaded(visNodes, visEdges);
+        }
+
         // Start physics simulation
         this.network.stabilize();
+    }
+
+    /**
+     * Update graph data (used by filters, focus mode, etc.)
+     */
+    updateData(nodes, edges) {
+        this.nodes.clear();
+        this.edges.clear();
+
+        this.nodes.add(nodes);
+        this.edges.add(edges);
+
+        // Fit to view
+        setTimeout(() => this.fit(), 100);
+    }
+
+    /**
+     * Set layout type.
+     */
+    setLayout(layoutType) {
+        this.currentLayout = layoutType;
+        const layoutConfig = this.layoutOptions[layoutType];
+
+        if (!layoutConfig) {
+            console.warn(`Unknown layout type: ${layoutType}`);
+            return;
+        }
+
+        // Handle circular layout specially
+        if (layoutType === 'circular') {
+            this.applyCircularLayout();
+            return;
+        }
+
+        // Apply layout options
+        this.network.setOptions(layoutConfig);
+
+        // Re-stabilize if physics is enabled
+        if (layoutConfig.physics?.enabled) {
+            this.network.stabilize();
+        }
+    }
+
+    /**
+     * Apply circular layout manually.
+     */
+    applyCircularLayout() {
+        const nodeIds = this.nodes.getIds();
+        const nodeCount = nodeIds.length;
+        const centerX = 0;
+        const centerY = 0;
+        const radius = Math.max(200, nodeCount * 10);
+
+        const positions = {};
+        nodeIds.forEach((id, index) => {
+            const angle = (2 * Math.PI * index) / nodeCount;
+            positions[id] = {
+                x: centerX + radius * Math.cos(angle),
+                y: centerY + radius * Math.sin(angle)
+            };
+        });
+
+        // Disable physics and set positions
+        this.network.setOptions({ physics: { enabled: false } });
+        this.network.setData({ nodes: this.nodes, edges: this.edges });
+
+        nodeIds.forEach(id => {
+            this.network.moveNode(id, positions[id].x, positions[id].y);
+        });
+
+        this.fit();
     }
 
     /**
@@ -212,9 +376,10 @@ class GraphRenderer {
 
         return {
             id: node.id,
-            label: this.truncateLabel(node.name),
+            label: this.truncateLabel(node.name || node.label || node.id),
             title: this.createTooltip(node),
             shape: shape,
+            group: type.toLowerCase(),
             color: {
                 background: colors.background,
                 border: colors.border,
@@ -230,6 +395,8 @@ class GraphRenderer {
             font: {
                 color: colors.font
             },
+            file: node.file,
+            line: node.line,
             // Store original data for reference
             data: node
         };
@@ -239,8 +406,8 @@ class GraphRenderer {
      * Create a vis.js edge from API data.
      */
     createVisEdge(edge, index) {
-        const relationship = edge.relationship || 'UNKNOWN';
-        const color = this.edgeColors[relationship] || '#808080';
+        const relationship = edge.relationship || edge.type || 'UNKNOWN';
+        const color = this.edgeColors[relationship] || '#5c6370';
         const confidence = edge.confidence || 'HIGH';
 
         // Determine dash style based on confidence
@@ -252,9 +419,10 @@ class GraphRenderer {
         }
 
         return {
-            id: `edge-${index}`,
+            id: edge.id || `edge-${index}`,
             from: edge.from,
             to: edge.to,
+            type: relationship,
             label: relationship,
             color: {
                 color: color,
@@ -270,6 +438,7 @@ class GraphRenderer {
      * Truncate long labels.
      */
     truncateLabel(label, maxLength = 25) {
+        if (!label) return '';
         if (label.length <= maxLength) return label;
         return label.substring(0, maxLength - 3) + '...';
     }
@@ -279,8 +448,8 @@ class GraphRenderer {
      */
     createTooltip(node) {
         const lines = [
-            `<strong>${node.name}</strong>`,
-            `Type: ${node.type}`,
+            `<strong>${node.name || node.label || node.id}</strong>`,
+            `Type: ${node.type || 'Unknown'}`,
         ];
         if (node.file) {
             lines.push(`File: ${node.file}`);
@@ -438,6 +607,11 @@ class GraphRenderer {
         });
         this.edges.add(visEdges);
 
+        // Notify listeners
+        if (this.onDataLoaded) {
+            this.onDataLoaded(visNodes, visEdges);
+        }
+
         // Fit to view
         setTimeout(() => this.fit(), 100);
     }
@@ -454,9 +628,13 @@ class GraphRenderer {
      */
     showLoading(text = 'Loading...') {
         const overlay = document.getElementById('loading-overlay');
-        const loadingText = overlay.querySelector('.loading-text');
-        loadingText.textContent = text;
-        overlay.classList.remove('hidden');
+        if (overlay) {
+            const loadingText = overlay.querySelector('.loading-text');
+            if (loadingText) {
+                loadingText.textContent = text;
+            }
+            overlay.classList.remove('hidden');
+        }
     }
 
     /**
@@ -464,7 +642,9 @@ class GraphRenderer {
      */
     updateLoadingProgress(progress) {
         const loadingText = document.querySelector('.loading-text');
-        loadingText.textContent = `Stabilizing layout... ${progress}%`;
+        if (loadingText) {
+            loadingText.textContent = `Stabilizing layout... ${progress}%`;
+        }
     }
 
     /**
@@ -472,7 +652,9 @@ class GraphRenderer {
      */
     hideLoading() {
         const overlay = document.getElementById('loading-overlay');
-        overlay.classList.add('hidden');
+        if (overlay) {
+            overlay.classList.add('hidden');
+        }
     }
 
     /**
@@ -484,9 +666,32 @@ class GraphRenderer {
             this.selectedNode = nodeId;
             this.highlightNode(nodeId);
             this.focusOnNode(nodeId);
+
+            const nodeData = this.nodes.get(nodeId);
             if (this.onNodeSelect) {
-                this.onNodeSelect(nodeId);
+                this.onNodeSelect(nodeId, nodeData);
             }
         }
+    }
+
+    /**
+     * Get all node data.
+     */
+    getAllNodes() {
+        return this.nodes.get();
+    }
+
+    /**
+     * Get all edge data.
+     */
+    getAllEdges() {
+        return this.edges.get();
+    }
+
+    /**
+     * Get current layout type.
+     */
+    getCurrentLayout() {
+        return this.currentLayout;
     }
 }

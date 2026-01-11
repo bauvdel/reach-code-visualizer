@@ -27,6 +27,11 @@ class QueryInterface {
      * Set up event listeners.
      */
     setupEventListeners() {
+        if (!this.searchInput || !this.searchResults) {
+            console.warn('QueryInterface: Missing required elements');
+            return;
+        }
+
         // Search input - debounced
         this.searchInput.addEventListener('input', () => {
             clearTimeout(this.searchTimeout);
@@ -45,7 +50,7 @@ class QueryInterface {
         });
 
         // Search button click - execute query
-        this.searchBtn.addEventListener('click', () => {
+        this.searchBtn?.addEventListener('click', () => {
             this.executeCurrentQuery();
         });
 
@@ -82,20 +87,20 @@ class QueryInterface {
         });
 
         // Filter changes
-        this.filterType.addEventListener('change', () => {
+        this.filterType?.addEventListener('change', () => {
             if (this.onFilter) {
                 this.onFilter({
-                    type: this.filterType.value,
-                    language: this.filterLanguage.value
+                    type: this.filterType?.value || '',
+                    language: this.filterLanguage?.value || ''
                 });
             }
         });
 
-        this.filterLanguage.addEventListener('change', () => {
+        this.filterLanguage?.addEventListener('change', () => {
             if (this.onFilter) {
                 this.onFilter({
-                    type: this.filterType.value,
-                    language: this.filterLanguage.value
+                    type: this.filterType?.value || '',
+                    language: this.filterLanguage?.value || ''
                 });
             }
         });
